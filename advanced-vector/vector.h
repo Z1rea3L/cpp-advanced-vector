@@ -210,6 +210,7 @@ public:
     }
 
     const T& operator[](size_t index) const noexcept {
+        assert(index < size_);
         return const_cast<Vector&>(*this)[index];
     }
 
@@ -263,58 +264,68 @@ public:
 
     template <typename... Args>
     iterator Emplace(const_iterator pos, Args&&... args) {
+
         if (size_ == Capacity()) {
-
-            size_t new_size = size_ + 1;
-            size_t new_capacity = (size_>0 ? size_*2 : 1);
-            size_t offset = pos - cbegin();
-
-            RawMemory<T> new_data(new_capacity);
-            new (new_data + offset) T(std::forward<Args>(args)...);
-
-            try {
-                RawMemory<T>::CopyOrMoveData(data_.GetAddress(),offset, new_data.GetAddress());
-
-            }catch (...){
-                std::destroy_n(new_data.GetAddress() + offset, 1);
-                throw;
-            }
-
-            try {
-                RawMemory<T>::CopyOrMoveData(data_.GetAddress() + offset, (cend() - pos), new_data.GetAddress() + offset + 1);
-
-            }catch (...){
-                std::destroy_n(new_data.GetAddress(), offset);
-                throw;
-            }
-
-            std::destroy_n(data_.GetAddress(), size_);
-            data_.Swap(new_data);
-            size_ = new_size;
-
-            return begin() + offset;
+            return EmplaceWithRealloc(pos, std::forward<Args>(args)...);
 
         }else{
-            size_t new_size = size_ + 1;
-            size_t offset = pos - cbegin();
-
-            if (pos == cend()) {
-                new (data_ + size_) T(std::forward<Args>(args)...);
-
-            }else{
-                T&& temp = T(std::forward<Args>(args)...);
-                new (data_ + size_) T(std::move(data_[size_ - 1]));
-
-                iterator first = begin() + offset;
-                iterator last = begin() + (size_ - 1);
-
-                std::move_backward(first, last, end());
-                data_[offset] = std::move(temp);
-            }
-
-            size_ = new_size;
-            return begin() + offset;
+            return EmplaceWithoutRealloc(pos, std::forward<Args>(args)...);
         }
+    }
+
+    template <typename... Args>
+    iterator EmplaceWithRealloc(const_iterator pos, Args&&... args){
+        size_t new_size = size_ + 1;
+        size_t new_capacity = (size_>0 ? size_*2 : 1);
+        size_t offset = pos - cbegin();
+
+        RawMemory<T> new_data(new_capacity);
+        new (new_data + offset) T(std::forward<Args>(args)...);
+
+        try {
+            RawMemory<T>::CopyOrMoveData(data_.GetAddress(),offset, new_data.GetAddress());
+
+        }catch (...){
+            std::destroy_n(new_data.GetAddress() + offset, 1);
+            throw;
+        }
+
+        try {
+            RawMemory<T>::CopyOrMoveData(data_.GetAddress() + offset, (cend() - pos), new_data.GetAddress() + offset + 1);
+
+        }catch (...){
+            std::destroy_n(new_data.GetAddress(), offset);
+            throw;
+        }
+
+        std::destroy_n(data_.GetAddress(), size_);
+        data_.Swap(new_data);
+        size_ = new_size;
+
+        return begin() + offset;
+    }
+
+    template <typename... Args>
+    iterator EmplaceWithoutRealloc(const_iterator pos, Args&&... args){
+        size_t new_size = size_ + 1;
+        size_t offset = pos - cbegin();
+
+        if (pos == cend()) {
+            new (data_ + size_) T(std::forward<Args>(args)...);
+
+        }else{
+            T&& temp = T(std::forward<Args>(args)...);
+            new (data_ + size_) T(std::move(data_[size_ - 1]));
+
+            iterator first = begin() + offset;
+            iterator last = begin() + (size_ - 1);
+
+            std::move_backward(first, last, end());
+            data_[offset] = std::move(temp);
+        }
+
+        size_ = new_size;
+        return begin() + offset;
     }
 
     iterator Insert(const_iterator pos, const T& value) {
